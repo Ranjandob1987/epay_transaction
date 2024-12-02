@@ -1,3 +1,47 @@
+
+import com.example.payment.utils.ATRNGenerator;
+
+public TransactionResponse<PaymentResponse> initiatePayment(String payMode, String orderNumber) {
+    // Step 1: Fetch Merchant Details
+    EPayPrincipal ePayPrincipal = (EPayPrincipal) SecurityContextHolder.getContext().getAuthentication().getPrincipal();
+    String merchantId = ePayPrincipal.getMerchantId();
+
+    // Step 2: Fetch Order Details
+    Optional<PaymentTransaction> existingOrder = transactionRepository.findByOrderNumber(orderNumber);
+    if (existingOrder.isPresent() && existingOrder.get().getAtrn() != null) {
+        throw new IllegalStateException("ATRN already exists. Cannot initiate payment again.");
+    }
+
+    // Step 3: Generate 15-digit ATRN Number
+    String atrn = ATRNGenerator.generateATRN();
+
+    // Step 4: Save PaymentTransaction to the Database
+    PaymentTransaction transaction = new PaymentTransaction();
+    transaction.setAtrn(atrn);
+    transaction.setOrderNumber(orderNumber);
+    transaction.setReferenceNumber(UUID.randomUUID().toString()); // Generate a unique reference number
+    transaction.setOrderAmount(1000.00); // Placeholder for the order amount
+    transaction.setStatus("PENDING");
+
+    transactionRepository.save(transaction);
+
+    // Step 5: Call Payment Gateway API
+    String paymentUrl = callPaymentGatewayAPI(payMode, atrn);
+
+    // Step 6: Construct Response
+    PaymentResponse paymentResponse = PaymentResponse.builder()
+            .atrn(atrn)
+            .paymentUrl(paymentUrl)
+            .status("PENDING")
+            .build();
+
+    return TransactionResponse.<PaymentResponse>builder()
+            .status(1)
+            .count(1L)
+            .data(List.of(paymentResponse))
+            .build();
+}
+
 package com.epay.transaction.service;
 
 import com.epay.transaction.dao.PaymentTxnDao;
